@@ -1,18 +1,6 @@
 
-
-var normalize = function(value, max) {
-  return value / max;
-};
-
-var distance = function(x, y, x1, y1) {
-  return Math.sqrt(Math.pow(x - x1, 2) + Math.pow(y - y1, 2));
-};
-
-var idCount = 0;
-
 var nodeSigmoid = function() {
   return {
-    id: idCount ++,
     inputs: [],
     inputWeights: [],
     output: 0,
@@ -203,7 +191,7 @@ var network = function() {
     layers: [],
     windowOfStates: [],
     maxWindowStates: 2000,
-    learnWindow: 100,
+    learnWindow: 50,
     learnRate: 0.01,
     actionsAsOutputs: [
       [1, 0, 0, 0], // up
@@ -211,10 +199,10 @@ var network = function() {
       [0, 0, 1, 0], // down
       [0, 0, 0, 1] // right
     ],
-    epsilon: 10000,
+    epsilon: 2000,
     buckets: [0,0,0,0,0],
     actionChoiceBuckets: [0,0,0,0,0],
-    temporalWindowFrames: 3,
+    temporalWindowFrames: 4,
     temporalWindow: new temporalWindow(),
     normalize: function(value, max) {
       return value / max;
@@ -261,7 +249,6 @@ var network = function() {
       gameState.actorPosx = posx;
       gameState.actorPosy = posy;
 
-      gameState.previousDistance = gameState.currentDistance;
       gameState.currentDistance = this.distance(gameState.actorPosx , gameState.actorPosy, gameState.goalPosx, gameState.goalPosy);
 
       gameState.steps ++;
@@ -392,11 +379,11 @@ var network = function() {
         goalPosx: 19,
         goalPosy: 19,
         currentDistance: 0,
-        previousDistance: 99,
         score: 0,
-        maxSteps: 15,
+        maxSteps: 39,
         steps: 0
       };
+      gameState.currentDistance = this.distance(gameState.actorPosx , gameState.actorPosy, gameState.goalPosx, gameState.goalPosy);
 
       this.saveStateInTemporalWindow(gameState);
       this.saveStateInTemporalWindow(gameState);
@@ -407,8 +394,7 @@ var network = function() {
         // Run sim
 
         // Generate inputs
-        gameState.previousDistance = gameState.currentDistance;
-        gameState.currentDistance = this.distance(gameState.actorPosx , gameState.actorPosy, gameState.goalPosx, gameState.goalPosy);
+        //gameState.currentDistance = this.distance(gameState.actorPosx , gameState.actorPosy, gameState.goalPosx, gameState.goalPosy);
         //var maxDistance = this.distance(0 , 0, gameState.areaMax, gameState.areaMax);
 /*
         var inputs = [
@@ -431,6 +417,7 @@ var network = function() {
 
         process.stdout.write("\u001b[2J\u001b[0;0H");
         console.log('simulationIteration: ' + simulationIteration);
+        console.log('steps: ' + gameState.steps);
         console.log('score: ' + gameState.score);
         console.log('actor pos: ' + gameState.actorPosx + ',' + gameState.actorPosy);
         for (var y = 0;y < gameState.areaMax;y ++) {
@@ -493,16 +480,11 @@ var network = function() {
       }
 
 
-
       var error = this.evaluationFunction(action, state);
       this.moveActor(action, state);
 
       this.saveStateInTemporalWindow(state, action);
-/*
-      var outputAdjustedForError = [];
-      for (var index = 0;index < output.length;index ++) {
-        outputAdjustedForError.push((error * action[index]) - output[index]);
-      }*/
+
 
       var temporalWindowCopy = new temporalWindow();
       temporalWindowCopy.set(this.temporalWindow.copy());
@@ -510,11 +492,8 @@ var network = function() {
       this.windowOfStates.push({
         temporalWindow: temporalWindowCopy,
         gameState: JSON.parse(JSON.stringify(state)),
-        //inputs: inputsThisTick,
-        //errors: outputAdjustedForError,
         //action: action,
-        error: error,
-        //output: output
+        error: error
       });
       this.train(this.windowOfStates[this.windowOfStates.length - 1]);
 /*
@@ -550,7 +529,7 @@ var network = function() {
 
       var inputs = this.temporalWindowToInputNodes(state.temporalWindow);
 
-      inputs[6] = 0;
+      inputs[6] = 0; // TODO: A bit of a hack! May need to restructure things
       inputs[7] = 0;
       inputs[8] = 0;
       inputs[9] = 0;
@@ -601,20 +580,19 @@ var network = function() {
         console.log('best action: right');
       }*/
 
-      var leanRate = this.learnRate;
-      if (state.error > lowestError) {
-        //leanRate *= 2;
-      }
-
       for (var layerIndex = this.layers.length - 1;layerIndex > 0;layerIndex --) {
         var layer = this.layers[layerIndex];
         for (var nodeIndex = 0;nodeIndex < layer.nodes.length;nodeIndex ++) {
           if (layerIndex === this.layers.length - 1) {
-              layer.backwardOutputLayer(nodeIndex, leanRate, bestAction[nodeIndex]);
+            if (bestAction[nodeIndex] > 0) {
+              layer.backwardOutputLayer(nodeIndex, this.learnRate * 2, bestAction[nodeIndex]);
+            } else {
+              layer.backwardOutputLayer(nodeIndex, this.learnRate, bestAction[nodeIndex]);
+            }
             //layer.backwardOutputLayer(nodeIndex, this.learnRate, bestAction[nodeIndex]);
             //layer.backwardOutputLayerWithError(nodeIndex, this.learnRate, state.error - lowestError);
           } else {
-            layer.backward(nodeIndex, leanRate);
+            layer.backward(nodeIndex, this.learnRate);
           }
         }
       }
@@ -633,12 +611,12 @@ var network = function() {
   }
 };
 
-// Initialize our very small network
+// Initialize our network
 var theNetwork = new network();
 theNetwork.initialize([
-  10 * 3, 10, 10, 10, 10, 4
+  10 * 4, 10, 10, 10, 10, 4
 ]);
 
 // Train it
-theNetwork.simulation(20000000);
+theNetwork.simulation(2000000);
 
