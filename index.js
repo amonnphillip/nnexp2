@@ -52,14 +52,6 @@ var nodeSigmoid = function() {
         this.inputWeights[weightIndex] += tweakAmount;
       }
     },
-    backwardWithError: function(learnRate, error) {
-      this.error = error * learnRate;
-      for (var weightIndex = 0;weightIndex < this.inputs.length;weightIndex ++) {
-        var tweakAmount = this.error * this.inputs[weightIndex].output;
-        tweakAmount *= learnRate;
-        this.inputWeights[weightIndex] += tweakAmount;
-      }
-    },
     getWeightCount: function() {
       return this.inputWeights.length;
     },
@@ -116,9 +108,6 @@ var layer = function() {
     },
     backwardOutputLayer: function(nodeIndex, learnRate, expectedOutput) {
       this.nodes[nodeIndex].backwardWithExpectedOutput(learnRate, expectedOutput);
-    },
-    backwardOutputLayerWithError: function(nodeIndex, learnRate, error) {
-      this.nodes[nodeIndex].backwardWithError(learnRate, error);
     },
     setNodeOutput: function(nodeIndex, value) {
       this.nodes[nodeIndex].setOutput(value);
@@ -199,9 +188,7 @@ var network = function() {
       [0, 0, 1, 0], // down
       [0, 0, 0, 1] // right
     ],
-    epsilon: 2000,
-    buckets: [0,0,0,0,0],
-    actionChoiceBuckets: [0,0,0,0,0],
+    epsilon: 1000,
     temporalWindowFrames: 4,
     temporalWindow: new temporalWindow(),
     normalize: function(value, max) {
@@ -365,11 +352,7 @@ var network = function() {
       return inputs;
     },
     simulation: function(maxIterations) {
-      /*
-        A very simple move to the center game
-       */
       var simulationIteration = 0;
-      var layerDisplayCount = 1000;
 
       // Out variables for the game
       var gameState = {
@@ -390,30 +373,8 @@ var network = function() {
       this.saveStateInTemporalWindow(gameState);
 
       while (simulationIteration < maxIterations) {
-
-        // Run sim
-
-        // Generate inputs
-        //gameState.currentDistance = this.distance(gameState.actorPosx , gameState.actorPosy, gameState.goalPosx, gameState.goalPosy);
-        //var maxDistance = this.distance(0 , 0, gameState.areaMax, gameState.areaMax);
-/*
-        var inputs = [
-          this.normalize(gameState.actorPosx, gameState.areaMax),
-          this.normalize(gameState.actorPosy, gameState.areaMax),
-          this.normalize(gameState.goalPosx, gameState.areaMax),
-          this.normalize(gameState.goalPosy, gameState.areaMax),
-          this.normalize(gameState.currentDistance, maxDistance)
-        ];*/
-
         // Train the nn
         this.tick(simulationIteration, gameState);
-
-        // Display
-        layerDisplayCount --;
-        if (layerDisplayCount <= 0) {
-          layerDisplayCount = 10;
-          //this.displayToConsole();
-        }
 
         process.stdout.write("\u001b[2J\u001b[0;0H");
         console.log('simulationIteration: ' + simulationIteration);
@@ -441,11 +402,7 @@ var network = function() {
     },
     tick: function(iteration, state) {
 
-      //this.saveStateInTemporalWindow(state, );
-
       var inputs = this.temporalWindowToInputNodesWithCurrentState(this.temporalWindow, state);
-
-      //var inputs = this.temporalWindowToInputNodes(this.temporalWindow);
 
       var inputLayer = this.layers[0];
       for (var nodeIndex = 0;nodeIndex < inputLayer.getNodeCount();nodeIndex ++) {
@@ -465,9 +422,6 @@ var network = function() {
       if (iteration < this.epsilon) {
         var actionChoice = Math.floor(Math.random() * this.actionsAsOutputs.length);
 
-        //this.actionChoiceBuckets[actionChoice] ++;
-        //console.log('actionChoiceBuckets: ' + this.actionChoiceBuckets[0] + ' ' + this.actionChoiceBuckets[1] + ' ' + this.actionChoiceBuckets[2] + ' ' + this.actionChoiceBuckets[3] + ' ' + this.actionChoiceBuckets[4]);
-
         action = this.actionsAsOutputs[actionChoice];
       } else {
         var strongestSignal = 0;
@@ -479,12 +433,10 @@ var network = function() {
         }
       }
 
-
       var error = this.evaluationFunction(action, state);
       this.moveActor(action, state);
 
       this.saveStateInTemporalWindow(state, action);
-
 
       var temporalWindowCopy = new temporalWindow();
       temporalWindowCopy.set(this.temporalWindow.copy());
@@ -492,21 +444,9 @@ var network = function() {
       this.windowOfStates.push({
         temporalWindow: temporalWindowCopy,
         gameState: JSON.parse(JSON.stringify(state)),
-        //action: action,
         error: error
       });
       this.train(this.windowOfStates[this.windowOfStates.length - 1]);
-/*
-      for (var layerIndex = this.layers.length - 1;layerIndex > 0;layerIndex --) {
-        var layer = this.layers[layerIndex];
-        for (var nodeIndex = 0;nodeIndex < layer.nodes.length;nodeIndex ++) {
-          if (layerIndex === this.layers.length - 1) {
-            layer.backwardOutputLayerWithError(nodeIndex, this.learnRate, outputAdjustedForError[nodeIndex]);
-          } else {
-            layer.backward(nodeIndex, this.learnRate);
-          }
-        }
-      }*/
 
       // Train based on previous input states from our 'memory' window
       if (this.windowOfStates.length > this.learnWindow) {
@@ -524,12 +464,12 @@ var network = function() {
 
       return output;
     },
-    train: function(state) { // TODO: Should rename state to window or something
+    train: function(window) {
       var inputLayer = this.layers[0];
 
-      var inputs = this.temporalWindowToInputNodes(state.temporalWindow);
+      var inputs = this.temporalWindowToInputNodes(window.temporalWindow);
 
-      inputs[6] = 0; // TODO: A bit of a hack! May need to restructure things
+      inputs[6] = 0; // TODO: A bit of a hack! Clear May need to restructure things...
       inputs[7] = 0;
       inputs[8] = 0;
       inputs[9] = 0;
@@ -549,36 +489,12 @@ var network = function() {
       var lowestError = 1;
       var bestAction = this.actionsAsOutputs[0];
       for (var actionIndex = 0;actionIndex < this.actionsAsOutputs.length;actionIndex ++) {
-        var thisActionError = this.evaluationFunction(this.actionsAsOutputs[actionIndex], state.gameState);
+        var thisActionError = this.evaluationFunction(this.actionsAsOutputs[actionIndex], window.gameState);
         if (thisActionError < lowestError) {
           bestAction = this.actionsAsOutputs[actionIndex];
           lowestError = thisActionError;
         }
       }
-
-      //console.log('best action: ' + bestAction[0] + ' ' + bestAction[1] + ' ' + bestAction[2] + ' ' + bestAction[3] + ' ' + bestAction[4]);
-      /*
-      if (bestAction[0] > 0) {
-        this.buckets[0] ++;
-      } else if (bestAction[1] > 0) {
-        this.buckets[1] ++;
-      } else if (bestAction[2] > 0) {
-        this.buckets[2] ++;
-      } else if (bestAction[3] > 0) {
-        this.buckets[3] ++;
-      }*/
-      //console.log('buckets: ' + this.buckets[0] + ' ' + this.buckets[1] + ' ' + this.buckets[2] + ' ' + this.buckets[3] + ' ' + this.buckets[4]);
-
-/*
-      if (bestAction[0] > 0) {
-        console.log('best action: up');
-      } else if (bestAction[1] > 0) {
-        console.log('best action: left');
-      } else if (bestAction[2] > 0) {
-        console.log('best action: down');
-      } else if (bestAction[3] > 0) {
-        console.log('best action: right');
-      }*/
 
       for (var layerIndex = this.layers.length - 1;layerIndex > 0;layerIndex --) {
         var layer = this.layers[layerIndex];
@@ -589,8 +505,6 @@ var network = function() {
             } else {
               layer.backwardOutputLayer(nodeIndex, this.learnRate, bestAction[nodeIndex]);
             }
-            //layer.backwardOutputLayer(nodeIndex, this.learnRate, bestAction[nodeIndex]);
-            //layer.backwardOutputLayerWithError(nodeIndex, this.learnRate, state.error - lowestError);
           } else {
             layer.backward(nodeIndex, this.learnRate);
           }
@@ -611,12 +525,12 @@ var network = function() {
   }
 };
 
-// Initialize our network
+// Initialize our network with the layers we want
 var theNetwork = new network();
 theNetwork.initialize([
-  10 * 4, 10, 10, 10, 10, 4
+  10 * 4, 10, 10, 10, 10, 4 // First input layer count = important gameState properties * historical instances we want to use as inputs (basically a kind of memory)
 ]);
 
 // Train it
-theNetwork.simulation(2000000);
+theNetwork.simulation(200000);
 
