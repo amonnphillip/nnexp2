@@ -32,24 +32,21 @@ var nodeSigmoid = function() {
     backward: function(learnRate) {
       var error = 0;
       for (var outputLinkIndex = 0;outputLinkIndex < this.outputLinks.length;outputLinkIndex ++) {
-        var n = this.outputLinks[outputLinkIndex].getMatchingWeightForNode(this);
-        error += this.outputLinks[outputLinkIndex].error * n;
+        error += this.outputLinks[outputLinkIndex].error * this.outputLinks[outputLinkIndex].getMatchingWeightForNode(this);
       }
+
+      error /= this.outputLinks.length;
 
       this.error = this.output * ((1 - this.output) * error);
 
       for (var weightIndex = 0;weightIndex < this.inputs.length;weightIndex ++) {
-        var tweakAmount = this.error * this.inputs[weightIndex].output;
-        tweakAmount *= learnRate;
-        this.inputWeights[weightIndex] += tweakAmount;
+        this.inputWeights[weightIndex] += this.error * this.inputs[weightIndex].output * learnRate;
       }
     },
     backwardWithExpectedOutput: function(learnRate, expectedOutput) {
       this.error = this.output * ((1 - this.output) * (expectedOutput - this.output));
       for (var weightIndex = 0;weightIndex < this.inputs.length;weightIndex ++) {
-        var tweakAmount = this.error * this.inputs[weightIndex].output;
-        tweakAmount *= learnRate;
-        this.inputWeights[weightIndex] += tweakAmount;
+        this.inputWeights[weightIndex] += this.error * this.inputs[weightIndex].output * learnRate;
       }
     },
     getWeightCount: function() {
@@ -180,8 +177,8 @@ var network = function() {
     layers: [],
     windowOfStates: [],
     maxWindowStates: 2000,
-    learnWindow: 50,
-    learnRate: 0.01,
+    learnWindow: 100,
+    learnRate: 0.1,
     actionsAsOutputs: [
       [1, 0, 0, 0], // up
       [0, 1, 0, 0], // left
